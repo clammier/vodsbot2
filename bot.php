@@ -115,7 +115,7 @@ Class Bot {
 	}
 
 	public function prepare($text) {
-		$json = json_decode(file_get_contents('http://www.reddit.com/r/vodsprivate/wiki/sidebar.json'));
+		$json = json_decode(file_get_contents('http://www.reddit.com/r/vodsprivate/wiki/sidebar/.json'));
 		$description = $json->data->content_md;
 		$description = str_replace("&gt;", ">", $description);
 		$description = str_replace('%%STATUS%%', '', $description);
