@@ -1,47 +1,43 @@
 <?php
-
+namespace  Dota;
 Class Bot {
 	public function __construct() {
-		var_dump("contruct before requires");	
 		require 'config.php';
-		require 'lib/googl.php';
-		require 'lib/snoopy.php';
-		var_dump("contruct after requires");		
 
 		$this->limit = 6;
-		var_dump("before snoopy");
-		$this->snoopy = new Snoopy();
-		var_dump("after snoopy");
-
+		$this->cache = new \Predis\Client;
 	}
 
 	public function update() {
-		$events = $this->events();
+		// $uh = $this->login();
+		 $events = $this->events();
 	}
 
 	public function login() {
-            $this->snoopy->submit("http://reddit.com/api/login/".$this->User['user'], $this->User);
-
+		$response = $this->reddit_api('login', $this->User);
+		return $response['modhash'];
 	}
 
 	public function events() {
 		//if (is_null($this->cache->get('events')))  {
-			// $events['jd'] = $this->joinDOTA();
+			$events['jd'] = $this->joinDOTA();
 			$events['gg'] = $this->gosugamers();
 
 			$events = json_encode($events);
 
+			$this->cache->set('events', $events);
 		//} else $events = $this->cache->get('events');
 
 		$this->sort(json_decode($events, true));
 	}
 
 	public function sort($events = NULL) {
-		if (!is_null($events)) {
+		if (!is_null($events))
+		{
 			foreach ($events['gg'] as $key => $value) $events['gg'][$key]['match_time'] = strtotime($value['datetime']);
 
 			// jD's API often returns NULL
-			if (isset($events['jd']) && !is_null($events['jd']) && $events['jd'] != 'NULL') {
+			if (!is_null($events['jd']) && $events['jd'] != 'NULL') {
 				$matches = array_merge($events['jd'], $events['gg']);
 
 				usort($matches, function($key1, $key2) {
@@ -49,37 +45,33 @@ Class Bot {
 					$value2 = $key2['match_time'];
 					return $value2 - $value1;
 				});
-			} else {
-				usort($events['gg'], function($key1, $key2) {
-					$value1 = $key1['match_time'];
-					$value2 = $key2['match_time'];
-					return $value1 - $value2;
-				});
-				$matches = $events['gg'];
-			}
 
-			$this->parse($matches);
+				$this->parse($matches);
+			}
 		}
 	}
 
 	public function parse($matches) {
+		print'<pre>';
+		print_r($matches);
+		print'</pre>';
+		exit;
+
 		$i = 0;
-		require 'countries.php';
+		date_default_timezone_set('UTC');
 		foreach ($matches as $match) {
-			if ($i < $this->limit) {
+			//if ($i < $this->limit) {
 				// Time
-				$time = "";
 				$ticker[$i]['timestamp'] = $match['match_time'];
 				$total_time = time() - $match['match_time'];
-				if ($total_time < 0) $total_time = $match['match_time'] - time();
 				$days       = floor($total_time /86400);
 				$hours      = floor($total_time /3600);
 				$minutes    = intval(($total_time/60) % 60);
+				$time = "";
 				if($days > 0) $time .= $days . 'd ';
-				if ($hours > 0) $time .= $hours.'h ';
-				if ($minutes > 0) $time .= $minutes.'m';
-
-				if ($match['isLive']) $time = 'live';
+				else if($hours > 0) $time .= $hours.'h ';
+				else if($minutes > 0) $time .= $minutes.'m';
+				else $time .= 'live';
 
 				$ticker[$i]['time'] = $time;
 
@@ -89,75 +81,27 @@ Class Bot {
 
 				// Teams
 				if (isset($match['team_1_name']) && isset($match['team_2_name']))  $ticker[$i]['teams'] = $match['team_1_name'].' vs '.$match['team_2_name'];
-				else if (isset($match['firstOpponent']['shortName']) && isset($match['secondOpponent']['shortName']))  $ticker[$i]['teams'] = '[](/'.strtolower($match['firstOpponent']['country']['countryCode']).' "'.$countries[$match['firstOpponent']['country']['countryCode']].'") '.$match['firstOpponent']['shortName'].' vs [](/'.strtolower($match['secondOpponent']['country']['countryCode']).' "'.$countries[$match['secondOpponent']['country']['countryCode']].'") '.$match['secondOpponent']['shortName'];
+				else if (isset($match['firstOpponent']['name']) && isset($match['secondOpponent']['name']))  $ticker[$i]['teams'] = $match['firstOpponent']['name'].' vs '.$match['secondOpponent']['name'];
 
 				// URLs
 				if (isset($match['pageUrl'])) $ticker[$i]['url']['gg'] = $match['pageUrl'];
 				if (isset($match['coverage_url'])) $ticker[$i]['url']['jd'] = $match['coverage_url'];
 
 				$i++;
-			} else break;
+			//} else break;
 		}
 
-		$this->format($ticker);
+		print'<pre>';
+		print_r($ticker);
+		print'</pre>';
 	}
 
 	public function format($ticker) {
-		$tock = "";
-		foreach ($ticker as $tick) {
-			$url = $this->shortenUrl($tick['url']['gg']);
-			if ($tick['time'] == 'live') $tock .= '* [**LIVE - ' . $tick['tournament'] . '**]('.$url.' "'.date('M d H:m T', $tick['timestamp']).'")  ';
-			else $tock .= '* ['.$tick['time'].' - ' . $tick['tournament'] . ']('.$url.' "'.date('M d H:m T', $tick['timestamp']).'")  ';
-
-			$tock .= "\n".$tick['teams']."\n\n";
-		}
-		$this->prepare($tock);
+		// TO DO: Format ticker array into reddit markdown
 	}
 
-	public function prepare($text) {
-		$json = json_decode(file_get_contents('http://www.reddit.com/r/vodsprivate/wiki/sidebar.json'));
-		$description = $json->data->content_md;
-		$description = str_replace("&gt;", ">", $description);
-		$description = str_replace('%%STATUS%%', '', $description);
-		$description = str_replace("%%EVENTS%%", $text, $description);
-
-		$this->post($description);
-	}
-
-	protected function post($description) {
-		
-		$this->login();
-
-		$this->snoopy->fetch('http://reddit.com/r/vodsprivate/about/edit/.json');
-		$about = json_decode($this->snoopy->results);
-		$data = $about->data;
-		var_dump($about);
-
-		$parameters['sr'] = 't5_2yytc';
-		$parameters['title'] = $data->title;
-		$parameters['public_description'] = $data->public_description;
-		$parameters['lang'] = $data->language;
-		$parameters['type'] = $data->subreddit_type;
-		$parameters['link_type'] = $data->content_options;
-		$parameters['wikimode'] = $data->wikimode;
-		$parameters['wiki_edit_karma'] = $data->wiki_edit_karma;
-		$parameters['wiki_edit_age'] = $data->wiki_edit_age;
-		$parameters['allow_top'] = 'on';
-		$parameters['header-title'] = '';
-		$parameters['id'] = '#sr-form';
-		$parameters['r'] = 'vodsprivate';
-		$parameters['renderstyle'] = 'html';
-		$parameters['comment_score_hide_mins'] = $data->comment_score_hide_mins;
-		$parameters['public_traffic'] = 'on';
-		$parameters['spam_comments'] = 'low';
-		$parameters['spam_links'] = 'low';
-		$parameters['spam_selfposts'] = 'low';
-		$parameters['link_type'] = 'any';
-		$parameters['description'] = $description;
-
-		$this->snoopy->submit("http://www.reddit.com/api/site_admin?api_type=json", $parameters);
-		var_dump(json_decode($this->snoopy->results));
-		print "\n\n" . date("[Y/M/d - H:i]: <br>") . $this->snoopy->results;
+	public function post($text) {
+		// TO DO: Post $text to reddit
 	}
 
 	protected function joinDOTA() {
@@ -171,12 +115,28 @@ Class Bot {
 		$data = json_decode($data);
 		return $data->matches;
 	}
-	private function shortenUrl($url) {
-		$googl = new \Googl($this->googleAPI);
-		$short = $googl->shorten($url);
 
-		//Return
-		return $short;
+	private function reddit_api($controller,  $parameters, $method = 'POST') {
+		$parameters['api_type'] = 'json';
+		$endpoint = 'http://api.reddit.com/api/'.$controller;
+
+		$curl = curl_init();
+		$options = array(
+			CURLOPT_URL => $endpoint,
+			CURLOPT_RETURNTRANSFER => true,
+		);
+
+		if ($method == 'POST')
+		{
+			$options[CURLOPT_POST] = true;
+			$options[CURLOPT_POSTFIELDS] = $parameters;
+		}
+
+		curl_setopt_array($curl, $options);
+		$response = json_decode(curl_exec($curl), true);
+		curl_close($curl);
+
+		if (!isset($response['json']['error'])) return $response['json']['data'];
 	}
 }
 ?>

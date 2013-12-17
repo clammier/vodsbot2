@@ -1,0 +1,14 @@
+<?php
+	$this->User = array(
+		'user'=>'Username',
+		'passwd'=>'password',
+		'api_type' => 'json'
+	);
+
+	$this->API = array(
+		'gg'=>'',
+		'jd'=>''
+	);
+
+	$this->googleAPI = '';
+?>
