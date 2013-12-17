@@ -1,7 +1,7 @@
 <?php
 	$this->User = array(
 		'user'=>'loleventvods',
-		'passwd'=>'pass',
+		'passwd'=>'vodsteam',
 		'api_type' => 'json'
 	);
 
